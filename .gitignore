@@ -1,0 +1,52 @@
+# ===============================
+# Backend (Node / Prisma)
+# ===============================
+backend/node_modules/
+backend/.env
+backend/.env.*
+backend/npm-debug.log*
+backend/yarn-debug.log*
+backend/yarn-error.log*
+
+# Prisma
+backend/src/generated/prisma/
+backend/prisma/*.db
+
+# ===============================
+# Frontend (Angular)
+# ===============================
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/.cache/
+frontend/tmp/
+frontend/out-tsc/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Angular environments
+frontend/src/environments/*.ts
+!frontend/src/environments/environment.ts
+
+# ===============================
+# General
+# ===============================
+.env
+.env.*
+*.log
+coverage/
+
+# ===============================
+# IDEs / Editors
+# ===============================
+.vscode/
+.idea/
+.cursor/
+.history/
+
+# ===============================
+# System files
+# ===============================
+.DS_Store
+Thumbs.db
