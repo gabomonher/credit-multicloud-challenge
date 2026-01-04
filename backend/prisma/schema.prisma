@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum CreditStatus {
+  PENDING
+  APPROVED
+}
+
+model Company {
+  id           String   @id @default(uuid())
+  name         String
+  taxId        String   @unique
+  sector       String
+  annualIncome Decimal
+  createdAt    DateTime @default(now())
+
+  credits      Credit[]
+}
+
+model Credit {
+  id         String       @id @default(uuid())
+  amount     Decimal
+  termMonths Int
+  status     CreditStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
+
+  companyId  String
+  company    Company      @relation(fields: [companyId], references: [id])
+}
