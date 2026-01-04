@@ -1,6 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CompanyService } from '../../core/services/company.service';
 import { Company } from '../../core/models/company.model';
@@ -8,9 +8,9 @@ import { Company } from '../../core/models/company.model';
 @Component({
   selector: 'app-companies',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink],
   template: `
-    <div class="container">
+    <div class="container" (click)="closeFilters($event)">
       <div class="page-header">
         <h1 class="page-title">Gestión de Empresas</h1>
         <p class="page-subtitle">Administra el portafolio de empresas registradas</p>
@@ -21,7 +21,7 @@ import { Company } from '../../core/models/company.model';
         <div class="card">
           <div class="card-header card-header-primary">
             <h2 style="margin: 0; font-size: 1.125rem;">Nueva Empresa</h2>
-            <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.875rem;">Registrar en el sistema</p>
+            <p style="margin: 0.25rem 0 0; opacity: 0.8; font-size: 0.875rem;">Registrar en el sistema</p>
           </div>
           
           <div class="card-body">
@@ -74,56 +74,107 @@ import { Company } from '../../core/models/company.model';
         <!-- Lista -->
         <div class="card">
           <div class="card-header">
-            <h2 style="margin: 0; font-size: 1.125rem; color: #1e293b;">Empresas Registradas</h2>
-            <p style="margin: 0.25rem 0 0; color: #64748b; font-size: 0.875rem;">{{ companies().length }} empresas en el sistema</p>
+            <h2 style="margin: 0; font-size: 1.125rem; color: white;">Empresas Registradas</h2>
+            <p style="margin: 0.25rem 0 0; color: var(--text-muted); font-size: 0.875rem;">{{ filteredCompanies().length }} empresas encontradas</p>
           </div>
           
           @if (isLoading()) {
             <div class="loading-state">
               <div class="spinner"></div>
-              <p style="color: #64748b; margin: 0;">Cargando empresas...</p>
-            </div>
-          } @else if (companies().length === 0) {
-            <div class="empty-state">
-              <div class="empty-icon">
-                <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-                </svg>
-              </div>
-              <h3 class="empty-title">Sin empresas registradas</h3>
-              <p class="empty-text">Comienza registrando la primera empresa</p>
+              <p style="color: var(--text-muted); margin: 0;">Cargando empresas...</p>
             </div>
           } @else {
             <div class="table-container">
               <table>
                 <thead>
                   <tr>
-                    <th>Empresa</th>
-                    <th>Sector</th>
+                    <th>
+                      <div class="th-content" (click)="toggleFilter('name', $event)">
+                        <span>Empresa</span>
+                        <svg class="filter-icon" [class.active]="activeFilter() === 'name' || searchTerm()" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                        </svg>
+                      </div>
+                      
+                      @if (activeFilter() === 'name') {
+                        <div class="filter-dropdown" (click)="$event.stopPropagation()">
+                          <input 
+                            type="text" 
+                            class="filter-search" 
+                            [ngModel]="searchTerm()" 
+                            (ngModelChange)="searchTerm.set($event)"
+                            placeholder="Buscar empresa..." 
+                            autofocus>
+                        </div>
+                      }
+                    </th>
+                    <th>
+                      <div class="th-content" (click)="toggleFilter('sector', $event)">
+                        <span>Sector</span>
+                        <svg class="filter-icon" [class.active]="activeFilter() === 'sector' || selectedSectors().length > 0" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                        </svg>
+                      </div>
+
+                      @if (activeFilter() === 'sector') {
+                        <div class="filter-dropdown" (click)="$event.stopPropagation()">
+                          <div class="filter-list">
+                            @for (sector of uniqueSectors(); track sector) {
+                              <label class="filter-option">
+                                <input 
+                                  type="checkbox" 
+                                  [checked]="selectedSectors().includes(sector)"
+                                  (change)="toggleSector(sector)">
+                                <span>{{ sector }}</span>
+                              </label>
+                            }
+                          </div>
+                          <div class="filter-actions">
+                            <button class="filter-btn-link" (click)="selectedSectors.set([])">Limpiar</button>
+                          </div>
+                        </div>
+                      }
+                    </th>
                     <th>Ingresos</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (company of companies(); track company.id) {
+                  @if (filteredCompanies().length === 0) {
                     <tr>
-                      <td>
-                        <div style="display: flex; align-items: center; gap: 0.75rem;">
-                          <div class="avatar">{{ company.name.substring(0, 2).toUpperCase() }}</div>
-                          <div>
-                            <div style="font-weight: 600; color: #1e293b;">{{ company.name }}</div>
-                            <div style="font-size: 0.875rem; color: #64748b;">{{ company.taxId }}</div>
+                      <td colspan="4" style="padding: 3rem; text-align: center;">
+                        <div class="empty-state" style="border: none; box-shadow: none; padding: 0;">
+                          <div class="empty-icon" style="margin: 0 auto 1rem;">
+                            <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                            </svg>
                           </div>
+                          <h3 class="empty-title">No se encontraron empresas</h3>
+                          <p class="empty-text">Intenta ajustar los filtros de búsqueda</p>
                         </div>
                       </td>
-                      <td><span class="badge badge-sector">{{ company.sector }}</span></td>
-                      <td style="font-weight: 600;">\${{ formatNumber(company.annualIncome) }}</td>
-                      <td style="text-align: right;">
-                        <a [routerLink]="['/companies', company.id]" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
-                          Ver Historial
-                        </a>
-                      </td>
                     </tr>
+                  } @else {
+                    @for (company of filteredCompanies(); track company.id) {
+                      <tr>
+                        <td>
+                          <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <div class="avatar">{{ company.name.substring(0, 2).toUpperCase() }}</div>
+                            <div>
+                              <div style="font-weight: 600; color: white;">{{ company.name }}</div>
+                              <div style="font-size: 0.875rem; color: var(--text-muted);">{{ company.taxId }}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td><span class="badge badge-sector">{{ company.sector }}</span></td>
+                        <td style="font-weight: 600; color: var(--secondary);">\${{ formatNumber(company.annualIncome) }}</td>
+                        <td style="text-align: right;">
+                          <a [routerLink]="['/companies', company.id]" class="btn btn-outline btn-sm">
+                            Ver Historial
+                          </a>
+                        </td>
+                      </tr>
+                    }
                   }
                 </tbody>
               </table>
@@ -143,6 +194,29 @@ export class CompaniesComponent implements OnInit {
   isSubmitting = signal(false);
   errorMessage = signal('');
 
+  // Filters
+  activeFilter = signal<string | null>(null);
+  searchTerm = signal('');
+  selectedSectors = signal<string[]>([]);
+
+  uniqueSectors = computed(() => {
+    const sectors = new Set(this.companies().map(c => c.sector));
+    return Array.from(sectors).sort();
+  });
+
+  filteredCompanies = computed(() => {
+    const term = this.searchTerm().toLowerCase();
+    const sectors = this.selectedSectors();
+
+    return this.companies().filter(company => {
+      const matchesTerm = company.name.toLowerCase().includes(term) ||
+        company.taxId.toLowerCase().includes(term);
+      const matchesSector = sectors.length === 0 || sectors.includes(company.sector);
+
+      return matchesTerm && matchesSector;
+    });
+  });
+
   companyForm: FormGroup = this.fb.group({
     name: ['', Validators.required],
     taxId: ['', Validators.required],
@@ -152,6 +226,30 @@ export class CompaniesComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadCompanies();
+  }
+
+  toggleFilter(filterName: string, event: Event): void {
+    event.stopPropagation();
+    if (this.activeFilter() === filterName) {
+      this.activeFilter.set(null);
+    } else {
+      this.activeFilter.set(filterName);
+    }
+  }
+
+  closeFilters(event: Event): void {
+    // Check if click is outside any dropdown
+    this.activeFilter.set(null);
+  }
+
+  toggleSector(sector: string): void {
+    this.selectedSectors.update(current => {
+      if (current.includes(sector)) {
+        return current.filter(s => s !== sector);
+      } else {
+        return [...current, sector];
+      }
+    });
   }
 
   loadCompanies(): void {

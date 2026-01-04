@@ -87,5 +87,51 @@ async function listCredits(req, res) {
   }
 }
 
-module.exports = { createCredit, listCredits };
+// PUT /credits/:id/status
+async function updateCreditStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
 
+    console.log('updateCreditStatus called:', { id, status, body: req.body });
+
+    // Validar status
+    if (!status || !['PENDING', 'APPROVED'].includes(status)) {
+      return res.status(400).json({
+        error: 'validation_error',
+        message: 'status must be PENDING or APPROVED'
+      });
+    }
+
+    // Verificar que el crédito exista
+    const existing = await prisma.credit.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'credit_not_found' });
+    }
+
+    // Actualizar status
+    const credit = await prisma.credit.update({
+      where: { id },
+      data: { status },
+      include: { company: { select: { id: true, name: true, taxId: true } } }
+    });
+
+    // Notificar cambio de estado
+    notify('credit.status_updated', {
+      creditId: credit.id,
+      companyId: credit.companyId,
+      oldStatus: existing.status,
+      newStatus: status
+    });
+
+    return res.json(credit);
+  } catch (e) {
+    console.error('Error in updateCreditStatus:', e);
+    return res.status(500).json({ 
+      error: 'server_error',
+      message: e.message || 'Internal server error'
+    });
+  }
+}
+
+module.exports = { createCredit, listCredits, updateCreditStatus };

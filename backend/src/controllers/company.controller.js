@@ -1,4 +1,5 @@
 const { prisma } = require('../config/prisma');
+const { notify } = require('../services/notification.service');
 
 // POST /companies
 async function createCompany(req, res) {
@@ -28,6 +29,14 @@ async function createCompany(req, res) {
         sector,
         annualIncome: annualIncomeNumber
       }
+    });
+
+    // Notificar creación
+    notify('company.created', {
+      companyId: company.id,
+      name: company.name,
+      taxId: company.taxId,
+      sector: company.sector
     });
 
     return res.status(201).json(company);

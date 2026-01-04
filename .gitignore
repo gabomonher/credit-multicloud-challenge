@@ -4,6 +4,7 @@
 backend/node_modules/
 backend/.env
 backend/.env.*
+!backend/.env.example
 backend/npm-debug.log*
 backend/yarn-debug.log*
 backend/yarn-error.log*
@@ -34,6 +35,7 @@ frontend/src/environments/*.ts
 # ===============================
 .env
 .env.*
+!*.env.example
 *.log
 coverage/
 

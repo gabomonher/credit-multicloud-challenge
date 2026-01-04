@@ -7,12 +7,10 @@ import { NavbarComponent } from './shared/components/navbar/navbar.component';
   standalone: true,
   imports: [RouterOutlet, NavbarComponent],
   template: `
-    <div class="min-h-screen bg-slate-50">
-      <app-navbar />
-      <main class="py-8">
-        <router-outlet />
-      </main>
-    </div>
+    <app-navbar />
+    <main>
+      <router-outlet />
+    </main>
   `
 })
-export class AppComponent {}
+export class AppComponent { }

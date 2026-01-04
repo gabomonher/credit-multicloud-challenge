@@ -1,6 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CreditService } from '../../core/services/credit.service';
 import { CompanyService } from '../../core/services/company.service';
@@ -10,9 +10,9 @@ import { Company } from '../../core/models/company.model';
 @Component({
   selector: 'app-credits',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink],
   template: `
-    <div class="container">
+    <div class="container" (click)="closeFilters($event)">
       <div class="page-header">
         <h1 class="page-title">Centro de Créditos</h1>
         <p class="page-subtitle">Gestiona solicitudes y aprobaciones de crédito</p>
@@ -122,60 +122,136 @@ import { Company } from '../../core/models/company.model';
         <!-- Lista -->
         <div class="card">
           <div class="card-header">
-            <h2 style="margin: 0; font-size: 1.125rem; color: #1e293b;">Solicitudes de Crédito</h2>
-            <p style="margin: 0.25rem 0 0; color: #64748b; font-size: 0.875rem;">Historial de operaciones</p>
+            <h2 style="margin: 0; font-size: 1.125rem; color: white;">Solicitudes de Crédito</h2>
+            <p style="margin: 0.25rem 0 0; color: var(--text-muted); font-size: 0.875rem;">{{ filteredCredits().length }} solicitudes</p>
           </div>
           
           @if (isLoading()) {
             <div class="loading-state">
               <div class="spinner"></div>
-              <p style="color: #64748b; margin: 0;">Cargando solicitudes...</p>
-            </div>
-          } @else if (credits().length === 0) {
-            <div class="empty-state">
-              <div class="empty-icon">
-                <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                </svg>
-              </div>
-              <h3 class="empty-title">Sin solicitudes</h3>
-              <p class="empty-text">Crea la primera solicitud de crédito</p>
+              <p style="color: var(--text-muted); margin: 0;">Cargando solicitudes...</p>
             </div>
           } @else {
             <div class="table-container">
               <table>
                 <thead>
                   <tr>
-                    <th>Empresa</th>
+                    <th>
+                      <div class="th-content" (click)="toggleFilter('company', $event)">
+                        <span>Empresa</span>
+                        <svg class="filter-icon" [class.active]="activeFilter() === 'company' || searchTerm()" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                        </svg>
+                      </div>
+
+                      @if (activeFilter() === 'company') {
+                        <div class="filter-dropdown" (click)="$event.stopPropagation()">
+                          <input 
+                            type="text" 
+                            class="filter-search" 
+                            [ngModel]="searchTerm()" 
+                            (ngModelChange)="searchTerm.set($event)"
+                            placeholder="Buscar por empresa..." 
+                            autofocus>
+                        </div>
+                      }
+                    </th>
                     <th>Monto</th>
                     <th>Plazo</th>
-                    <th>Estado</th>
+                    <th>
+                      <div class="th-content" (click)="toggleFilter('status', $event)">
+                        <span>Estado</span>
+                        <svg class="filter-icon" [class.active]="activeFilter() === 'status' || selectedStatuses().length > 0" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                        </svg>
+                      </div>
+
+                      @if (activeFilter() === 'status') {
+                        <div class="filter-dropdown" (click)="$event.stopPropagation()">
+                          <div class="filter-list">
+                            <label class="filter-option">
+                              <input 
+                                type="checkbox" 
+                                [checked]="selectedStatuses().includes('PENDING')"
+                                (change)="toggleStatus('PENDING')">
+                              <span>Pendiente</span>
+                            </label>
+                            <label class="filter-option">
+                              <input 
+                                type="checkbox" 
+                                [checked]="selectedStatuses().includes('APPROVED')"
+                                (change)="toggleStatus('APPROVED')">
+                              <span>Aprobado</span>
+                            </label>
+                            <label class="filter-option">
+                              <input 
+                                type="checkbox" 
+                                [checked]="selectedStatuses().includes('REJECTED')"
+                                (change)="toggleStatus('REJECTED')">
+                              <span>Rechazado</span>
+                            </label>
+                          </div>
+                          <div class="filter-actions">
+                            <button class="filter-btn-link" (click)="selectedStatuses.set([])">Limpiar</button>
+                          </div>
+                        </div>
+                      }
+                    </th>
                     <th>Fecha</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (credit of credits(); track credit.id) {
+                  @if (filteredCredits().length === 0) {
                     <tr>
-                      <td>
-                        @if (credit.company) {
-                          <a [routerLink]="['/companies', credit.companyId]" style="display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: inherit;">
-                            <div class="avatar avatar-secondary">{{ credit.company.name.substring(0, 2).toUpperCase() }}</div>
-                            <div>
-                              <div style="font-weight: 600; color: #1e293b;">{{ credit.company.name }}</div>
-                              <div style="font-size: 0.875rem; color: #64748b;">{{ credit.company.taxId }}</div>
-                            </div>
-                          </a>
-                        }
+                      <td colspan="6" style="padding: 3rem; text-align: center;">
+                        <div class="empty-state" style="border: none; box-shadow: none; padding: 0;">
+                          <div class="empty-icon" style="margin: 0 auto 1rem;">
+                            <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                          </div>
+                          <h3 class="empty-title">Sin solicitudes</h3>
+                          <p class="empty-text">No hay créditos con este estado</p>
+                        </div>
                       </td>
-                      <td style="font-weight: 700; font-size: 1.125rem;">\${{ formatNumber(credit.amount) }}</td>
-                      <td>{{ credit.termMonths }} meses</td>
-                      <td>
-                        <span [class]="'badge ' + (credit.status === 'APPROVED' ? 'badge-approved' : 'badge-pending')">
-                          {{ credit.status === 'PENDING' ? 'Pendiente' : 'Aprobado' }}
-                        </span>
-                      </td>
-                      <td style="color: #64748b;">{{ formatDate(credit.createdAt) }}</td>
                     </tr>
+                  } @else {
+                    @for (credit of filteredCredits(); track credit.id) {
+                      <tr>
+                        <td>
+                          @if (credit.company) {
+                            <a [routerLink]="['/companies', credit.companyId]" style="display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: inherit;">
+                              <div class="avatar avatar-secondary">{{ credit.company.name.substring(0, 2).toUpperCase() }}</div>
+                              <div>
+                                <div style="font-weight: 600; color: white;">{{ credit.company.name }}</div>
+                                <div style="font-size: 0.875rem; color: var(--text-muted);">{{ credit.company.taxId }}</div>
+                              </div>
+                            </a>
+                          }
+                        </td>
+                        <td style="font-weight: 700; font-size: 1.125rem; color: #34d399;">\${{ formatNumber(credit.amount) }}</td>
+                        <td>{{ credit.termMonths }} meses</td>
+                        <td>
+                          <span [class]="'badge ' + (credit.status === 'APPROVED' ? 'badge-approved' : 'badge-pending')">
+                            {{ credit.status === 'PENDING' ? 'Pendiente' : 'Aprobado' }}
+                          </span>
+                        </td>
+                        <td style="color: var(--text-muted);">{{ formatDate(credit.createdAt) }}</td>
+                        <td>
+                          @if (credit.status === 'PENDING') {
+                            <button 
+                              class="btn btn-sm btn-primary"
+                              (click)="approveCredit(credit.id)"
+                              [disabled]="isApproving() === credit.id">
+                              {{ isApproving() === credit.id ? 'Aprobando...' : 'Aprobar' }}
+                            </button>
+                          } @else {
+                            <span style="color: #10b981;">✓</span>
+                          }
+                        </td>
+                      </tr>
+                    }
                   }
                 </tbody>
               </table>
@@ -195,8 +271,27 @@ export class CreditsComponent implements OnInit {
   companies = signal<Company[]>([]);
   isLoading = signal(true);
   isSubmitting = signal(false);
+  isApproving = signal<string | null>(null);
   errorMessage = signal('');
   successMessage = signal('');
+
+  // Filters
+  activeFilter = signal<string | null>(null);
+  searchTerm = signal('');
+  selectedStatuses = signal<string[]>([]);
+
+  filteredCredits = computed(() => {
+    const term = this.searchTerm().toLowerCase();
+    const statuses = this.selectedStatuses();
+
+    return this.credits().filter(credit => {
+      const companyName = credit.company?.name.toLowerCase() || '';
+      const matchesCompany = companyName.includes(term);
+      const matchesStatus = statuses.length === 0 || statuses.includes(credit.status);
+
+      return matchesCompany && matchesStatus;
+    });
+  });
 
   creditForm: FormGroup = this.fb.group({
     companyId: ['', Validators.required],
@@ -226,6 +321,30 @@ export class CreditsComponent implements OnInit {
     this.companyService.getAll().subscribe({
       next: (companies) => {
         this.companies.set(companies);
+      }
+    });
+  }
+
+  // Filter methods
+  toggleFilter(filterName: string, event: Event): void {
+    event.stopPropagation();
+    if (this.activeFilter() === filterName) {
+      this.activeFilter.set(null);
+    } else {
+      this.activeFilter.set(filterName);
+    }
+  }
+
+  closeFilters(event: Event): void {
+    this.activeFilter.set(null);
+  }
+
+  toggleStatus(status: string): void {
+    this.selectedStatuses.update(current => {
+      if (current.includes(status)) {
+        return current.filter(s => s !== status);
+      } else {
+        return [...current, status];
       }
     });
   }
@@ -271,5 +390,31 @@ export class CreditsComponent implements OnInit {
   getTotalAmount(): string {
     const total = this.credits().reduce((sum, credit) => sum + parseFloat(credit.amount), 0);
     return total.toLocaleString('en-US');
+  }
+
+  approveCredit(creditId: string): void {
+    this.isApproving.set(creditId);
+    this.errorMessage.set('');
+
+    this.creditService.updateStatus(creditId, 'APPROVED').subscribe({
+      next: () => {
+        this.isApproving.set(null);
+        this.successMessage.set('Crédito aprobado exitosamente');
+        this.loadCredits();
+        setTimeout(() => this.successMessage.set(''), 4000);
+      },
+      error: (err) => {
+        this.isApproving.set(null);
+
+        let errorMsg = 'Error al aprobar crédito';
+        if (err.status === 404) {
+          errorMsg = 'Endpoint no encontrado. Verifica que el backend esté corriendo en el puerto 3000.';
+        } else if (err.error?.message) {
+          errorMsg = err.error.message;
+        }
+
+        this.errorMessage.set(errorMsg);
+      }
+    });
   }
 }
