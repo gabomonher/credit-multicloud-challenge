@@ -462,8 +462,3 @@ npm run build  # Build de producción
 ```
 
 ---
-
-## Licencia
-
-MIT License
-
