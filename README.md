@@ -10,6 +10,7 @@ Sistema de gestión de Líneas de Crédito para Empresas que permite registrar c
 - [Instalación y Setup](#instalación-y-setup)
 - [Endpoints de la API](#endpoints-de-la-api)
 - [Estructura del Proyecto](#estructura-del-proyecto)
+- [Despliegue en Google Cloud Platform](#despliegue-en-google-cloud-platform)
 - [Análisis de Costo-Eficiencia](#análisis-de-costo-eficiencia)
 
 ---
@@ -39,10 +40,10 @@ flowchart TB
         MySQL[(MySQL 8<br/>Puerto 3306)]
     end
 
-    subgraph Cloud["☁️ Opciones Cloud"]
-        GCP[Cloud SQL<br/>GCP]
-        AWS[RDS<br/>AWS]
-        Azure[Azure SQL<br/>Azure]
+    subgraph GCP["☁️ Google Cloud Platform"]
+        CloudRun[Cloud Run<br/>Backend & Frontend]
+        CloudSQL[Cloud SQL<br/>MySQL 8]
+        ArtifactReg[Artifact Registry<br/>Docker Images]
     end
 
     Browser --> NG
@@ -53,9 +54,9 @@ flowchart TB
     Controllers --> Prisma
     Controllers --> Notifications
     Prisma --> MySQL
-    MySQL -.->|Migración| GCP
-    MySQL -.->|Migración| AWS
-    MySQL -.->|Migración| Azure
+    MySQL -.->|Producción| CloudSQL
+    API -.->|Desplegado en| CloudRun
+    NG -.->|Desplegado en| CloudRun
 ```
 
 ### Flujo de Datos
@@ -90,6 +91,8 @@ sequenceDiagram
 | **ORM** | Prisma | 6.x |
 | **Base de Datos** | MySQL | 8.x |
 | **Contenedores** | Docker + Docker Compose | - |
+| **Cloud Platform** | Google Cloud Platform | - |
+| **Servicios GCP** | Cloud Run, Cloud SQL, Artifact Registry | - |
 
 ---
 
@@ -287,80 +290,152 @@ credit-multicloud-challenge/
 
 ---
 
-## Análisis de Costo-Eficiencia
+## Despliegue en Google Cloud Platform
 
-### Decisiones de Arquitectura
+### Arquitectura en GCP
 
-#### 1. Base de Datos: MySQL Local → Cloud SQL (GCP)
+El sistema está desplegado en **Google Cloud Platform** utilizando los siguientes servicios:
 
-| Opción | Costo Estimado | Justificación |
-|--------|----------------|---------------|
-| **MySQL Local (Docker)** | $0/mes | Desarrollo y pruebas |
-| **Cloud SQL (GCP)** | ~$25-50/mes | Escalabilidad automática, backups, alta disponibilidad |
-| **RDS (AWS)** | ~$30-60/mes | Similar a Cloud SQL, buena integración con servicios AWS |
-| **Azure SQL** | ~$35-70/mes | Integración con ecosistema Microsoft |
+| Servicio | Uso | Costo Estimado |
+|----------|-----|-----------------|
+| **Cloud Run** | Backend y Frontend (serverless) | ~$0-10/mes (pago por uso) |
+| **Cloud SQL** | Base de datos MySQL 8 | ~$25-50/mes (instancia pequeña) |
+| **Artifact Registry** | Almacenamiento de imágenes Docker | ~$0.10/GB/mes |
+| **Cloud Build** | CI/CD para builds | ~$0.003/minuto de build |
 
-**Elección recomendada para producción:** Cloud SQL de GCP
-- **Razón:** Mejor relación costo/rendimiento para cargas de trabajo pequeñas-medianas
-- Escalado automático sin intervención manual
-- Backups automáticos incluidos en el precio base
-- Réplicas de lectura disponibles para alta disponibilidad
+### Servicios Desplegados
 
-#### 2. Backend: Node.js + Express
+- **Backend API**: `creditcloud-backend` en Cloud Run
+  - URL: `https://creditcloud-backend-766205909248.us-central1.run.app`
+  - Escalado automático (0 a N instancias)
+  - Conectado a Cloud SQL mediante IP pública
 
-| Alternativa | Pros | Contras |
-|-------------|------|---------|
-| **Node.js Express** ✅ | Ligero, rápido desarrollo, gran ecosistema | Single-threaded |
-| Spring Boot | Robusto, tipado fuerte | Mayor consumo de recursos, más verbose |
-| Python Flask | Simple, legible | Menos performante para APIs de alto tráfico |
+- **Frontend**: `creditcloud-frontend` en Cloud Run
+  - URL: `https://creditcloud-frontend-766205909248.us-central1.run.app`
+  - Proxy nginx para rutas API al backend
 
-**Elección:** Node.js Express
-- Bajo consumo de memoria (~50-100MB)
-- Ideal para APIs I/O-bound como esta
-- Fácil despliegue en Cloud Run, App Engine o Lambda
+- **Base de Datos**: `creditcloud-mysql` en Cloud SQL
+  - Región: `us-central1`
+  - Versión: MySQL 8.0
+  - Configuración: 1 CPU, 4GB RAM, 10GB SSD
 
-#### 3. Sistema de Notificaciones
+- **Migraciones**: Cloud Run Job `creditcloud-migrate`
+  - Ejecuta `npx prisma migrate deploy` automáticamente
 
-| Opción | Costo | Uso Recomendado |
-|--------|-------|-----------------|
-| **Logs Estructurados** ✅ | $0 | MVP, desarrollo, auditoría |
-| Pub/Sub (GCP) | ~$0.04/millón msg | Eventos en tiempo real, microservicios |
-| SQS (AWS) | ~$0.40/millón msg | Cola de mensajes, procesamiento async |
-| SendGrid/Mailgun | ~$15-20/mes | Emails transaccionales |
+### Variables de Entorno en GCP
 
-**Elección actual:** Logs Estructurados (JSON)
-- Costo cero para MVP
-- Fácil migración a Pub/Sub cuando sea necesario
-- Compatible con Cloud Logging para análisis
+```bash
+# Backend en Cloud Run
+DATABASE_URL="mysql://user:pass@<cloud-sql-ip>:3306/creditdb"
+PORT=3000
+NODE_ENV=production
+```
 
-#### 4. Hosting Frontend
+### Instrucciones de Despliegue en GCP
 
-| Opción | Costo | Latencia |
-|--------|-------|----------|
-| **Firebase Hosting** | $0 (hasta 10GB) | Excelente (CDN global) |
-| Vercel | $0 (hobby) | Excelente |
-| Cloud Storage + CDN | ~$1-5/mes | Muy buena |
+#### 1. Crear instancia Cloud SQL
+
+```bash
+gcloud sql instances create creditcloud-mysql \
+  --database-version=MYSQL_8_0 \
+  --cpu=1 --memory=4GB \
+  --region=us-central1
+```
+
+#### 2. Crear base de datos y usuario
+
+```bash
+gcloud sql databases create creditdb --instance=creditcloud-mysql
+gcloud sql users create credituser --instance=creditcloud-mysql --password=<password>
+```
+
+#### 3. Construir y subir imágenes Docker
+
+```bash
+# Backend
+cd backend
+gcloud builds submit . --tag us-central1-docker.pkg.dev/<project-id>/creditcloud/backend:1.0.0
+
+# Frontend
+cd frontend
+gcloud builds submit . --tag us-central1-docker.pkg.dev/<project-id>/creditcloud/frontend:1.0.0
+```
+
+#### 4. Desplegar en Cloud Run
+
+```bash
+# Backend
+gcloud run deploy creditcloud-backend \
+  --image us-central1-docker.pkg.dev/<project-id>/creditcloud/backend:1.0.0 \
+  --region us-central1 \
+  --set-env-vars DATABASE_URL="mysql://user:pass@<cloud-sql-ip>:3306/creditdb" \
+  --allow-unauthenticated
+
+# Frontend
+gcloud run deploy creditcloud-frontend \
+  --image us-central1-docker.pkg.dev/<project-id>/creditcloud/frontend:1.0.0 \
+  --region us-central1 \
+  --port 80 \
+  --allow-unauthenticated
+```
+
+#### 5. Ejecutar migraciones
+
+```bash
+gcloud run jobs create creditcloud-migrate \
+  --image us-central1-docker.pkg.dev/<project-id>/creditcloud/backend:1.0.0 \
+  --region us-central1 \
+  --set-cloudsql-instances <project-id>:us-central1:creditcloud-mysql \
+  --set-env-vars DATABASE_URL="mysql://user:pass@<cloud-sql-ip>:3306/creditdb" \
+  --command npx --args prisma,migrate,deploy
+
+gcloud run jobs execute creditcloud-migrate --region us-central1 --wait
+```
 
 ### Resumen de Costos Estimados
 
 | Ambiente | Costo Mensual |
 |----------|---------------|
 | **Desarrollo (Local)** | $0 |
-| **Staging (Cloud mínimo)** | ~$30-50 |
-| **Producción (escalable)** | ~$80-150 |
+| **Producción (GCP)** | ~$30-60/mes |
 
-### Interoperabilidad Cloud
+**Desglose:**
+- Cloud Run: ~$0-10/mes (pago por uso, muy bajo tráfico)
+- Cloud SQL: ~$25-50/mes (instancia db-f1-micro o db-n1-standard-1)
+- Artifact Registry: ~$0.50/mes (pocas imágenes)
+- Cloud Build: ~$1-5/mes (builds ocasionales)
 
-El sistema está diseñado para ser **cloud-agnostic**:
+### Análisis de Costo-Eficiencia
 
-```bash
-# Variables de entorno para cambiar de proveedor
-DATABASE_URL="mysql://user:pass@localhost:3306/creditdb"     # Local
-DATABASE_URL="mysql://user:pass@cloud-sql-ip:3306/creditdb"  # GCP
-DATABASE_URL="mysql://user:pass@rds-endpoint:3306/creditdb"  # AWS
-```
+#### 1. Base de Datos: Cloud SQL (GCP)
 
-Solo cambiar `DATABASE_URL` en el archivo `.env` permite migrar entre proveedores sin modificar código.
+**Elección:** Cloud SQL MySQL 8.0
+- **Razón:** Escalabilidad automática, backups incluidos, alta disponibilidad
+- Backups automáticos sin costo adicional
+- Conexión segura desde Cloud Run
+- Escalado vertical fácil cuando sea necesario
+
+#### 2. Backend y Frontend: Cloud Run
+
+**Elección:** Cloud Run (serverless)
+- **Razón:** Pago solo por uso, escalado automático a cero
+- Sin servidores que mantener
+- Despliegue simple con `gcloud run deploy`
+- Integración nativa con otros servicios GCP
+
+#### 3. Sistema de Notificaciones
+
+**Implementación actual:** Logs Estructurados (JSON)
+- Costo: $0 (incluido en Cloud Logging)
+- Compatible con Cloud Logging para análisis
+- **Extensible a:** Pub/Sub cuando sea necesario (~$0.04/millón mensajes)
+
+#### 4. Imágenes Docker: Artifact Registry
+
+**Elección:** Artifact Registry
+- Integración nativa con Cloud Run
+- Versionado automático de imágenes
+- Costo muy bajo para proyectos pequeños
 
 ---
 
